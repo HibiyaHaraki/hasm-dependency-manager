@@ -1,16 +1,31 @@
 {
   "owner": "HibiyaHaraki",
   "repositories": {
-    "hasm_color_pattern": { "branch": "master", "submodules": { "hasm_logger": "hasm_logger" } },
-    "hasm_logger": { "branch": "master", "submodules": {} },
-    "hasm_visualizer": { "branch": "main", "submodules": {} },
+    "hasm_color_pattern": {
+      "branch": "master",
+      "submodules": {
+        "hasm_logger": "hasm_logger"
+      }
+    },
+    "hasm_logger": {
+      "branch": "master",
+      "submodules": {}
+    },
+    "hasm_visualizer": {
+      "branch": "main",
+      "submodules": {}
+    },
     "hasm_logo": {
       "branch": "master",
-      "submodules": { "hasm_color_pattern": "hasm_color_pattern" }
+      "submodules": {
+        "hasm_color_pattern": "hasm_color_pattern"
+      }
     },
     "hasm_example_generator": {
       "branch": "master",
-      "submodules": { "scripts/hasm_logger": "hasm_logger" }
+      "submodules": {
+        "scripts/hasm_logger": "hasm_logger"
+      }
     },
     "hasm_markdown": {
       "branch": "main",

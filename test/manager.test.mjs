@@ -179,6 +179,14 @@ class FakeGitHub {
       this.checks.push(check);
       return check;
     }
+    if (method === 'GET' && suffix.includes('/commits/') && suffix.includes('/check-runs?')) {
+      const sha = suffix.split('/commits/')[1].split('/check-runs?')[0];
+      return {
+        check_runs: this.checks
+          .filter((check) => check.repo === repo && check.head_sha === sha)
+          .sort((left, right) => right.id - left.id),
+      };
+    }
     if (method === 'PATCH' && suffix.startsWith('/check-runs/')) {
       const check = this.checks.find((item) => item.id === Number(suffix.slice(12)));
       Object.assign(check, body);
@@ -279,8 +287,10 @@ test('idempotent rerun makes no extra commits or PRs', async () => {
   const api = new FakeGitHub();
   await run(api);
   const count = api.createdCommits.length;
+  const topCheckCount = api.checks.filter((check) => check.repo === 'top').length;
   await run(api);
   assert.equal(api.createdCommits.length, count);
+  assert.equal(api.checks.filter((check) => check.repo === 'top').length, topCheckCount);
   assert.equal(api.prs.get('top').length, 1);
 });
 

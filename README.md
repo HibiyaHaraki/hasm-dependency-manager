@@ -34,7 +34,8 @@ gitlinks, and default branch on every run.
    reference mismatches, and links to the prerequisite PRs that need manual merges.
 4. Publish the App-owned `dependency-ready` check on the exact PR head. It fails
    until all direct and recursive pointers agree with the captured merged heads.
-   Application-code changes on an automatic branch also fail the check.
+   Application-code changes on an automatic branch also fail the check. Repeated
+   runs reuse an unchanged result instead of publishing duplicate check runs.
 5. After a prerequisite is manually merged, a subsequent run appends the
    consumer's gitlink update, refreshes its body and check, and marks it ready
    only when the prerequisite references are aligned. A human reviews and merges.

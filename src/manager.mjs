@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 export const BRANCH_PREFIX = 'hasm/dependency-updates/';
 export const CHECK_NAME = 'dependency-ready';
+const CHECK_EXTERNAL_ID = 'hasm-dependency-manager:dependency-ready';
 
 export function orderRepositories(config) {
   if (!/^[A-Za-z0-9-]+$/.test(config.owner)) throw new Error('Invalid repository owner.');
@@ -133,7 +134,11 @@ export class Manager {
       if (managed.length > 1) throw new Error(`${repo}: multiple automatic PRs; resolve them manually.`);
       if (managed.length) {
         this.managed.set(repo, managed[0]);
-        await this.check(repo, managed[0].head.sha, 'in_progress', 'Refreshing HASM dependency references.');
+        const previous = await this.latestCheck(repo, managed[0].head.sha);
+        if (!previous || previous.status === 'in_progress' || previous.conclusion === 'success') {
+          await this.check(repo, managed[0].head.sha, 'in_progress',
+            'Refreshing HASM dependency references.', previous?.id);
+        }
       }
     }
     for (const repo of this.order) {
@@ -222,7 +227,7 @@ export class Manager {
     }
     const body = {
       name: CHECK_NAME,
-      ...(id ? {} : { head_sha: sha }),
+      ...(id ? {} : { head_sha: sha, external_id: CHECK_EXTERNAL_ID }),
       status: status === 'in_progress' ? 'in_progress' : 'completed',
       ...(status === 'in_progress' ? {} : { conclusion: status }),
       output: { title: CHECK_NAME, summary: summary.slice(0, 60_000) },
@@ -230,6 +235,23 @@ export class Manager {
     const result = await this.api.request(id ? 'PATCH' : 'POST',
       this.path(repo, id ? `/check-runs/${id}` : '/check-runs'), body);
     return result.id;
+  }
+
+  async publishCheck(repo, sha, conclusion, summary, previous) {
+    if (previous?.status === 'completed'
+      && previous.conclusion === conclusion
+      && previous.output?.summary === summary) return previous.id;
+    const id = previous?.status === 'in_progress' ? previous.id : undefined;
+    return this.check(repo, sha, conclusion, summary, id);
+  }
+
+  async latestCheck(repo, sha) {
+    const result = await this.api.request('GET', this.path(
+      repo, `/commits/${encodeURIComponent(sha)}/check-runs?check_name=${CHECK_NAME}&per_page=100`,
+    ));
+    return result.check_runs
+      .filter((run) => run.external_id === CHECK_EXTERNAL_ID)
+      .sort((left, right) => right.id - left.id)[0];
   }
 
   async pointerCommit(repo, parent, path, sha) {
@@ -338,7 +360,7 @@ export class Manager {
   }
 
   async evaluate(repo, pr) {
-    let checkId;
+    let previous;
     let sha = pr.head.sha;
     try {
       const latest = await this.api.request('GET', this.path(repo, `/pulls/${pr.number}`));
@@ -352,10 +374,10 @@ export class Manager {
           this.path(repo, `/pulls/${this.managed.get(repo).number}`));
         if (automatic.state === 'open' && automatic.head.sha === sha) pr = automatic;
       }
-      checkId = await this.check(repo, sha, 'in_progress', 'Inspecting prerequisite merges and gitlinks.');
+      previous = await this.latestCheck(repo, sha);
       if (!this.isManaged(repo, pr)) {
-        await this.check(repo, sha, 'success',
-          'Not a HASM automatic update branch. Human review and normal CI still apply.', checkId);
+        await this.publishCheck(repo, sha, 'success',
+          'Not a HASM automatic update branch. Human review and normal CI still apply.', previous);
         return;
       }
       const snapshot = await this.validateBranch(repo, pr);
@@ -370,9 +392,11 @@ export class Manager {
       if (final.state !== 'open' || final.head.sha !== sha) {
         throw new Error(`${repo}: PR head/state changed during dependency evaluation.`);
       }
-      await this.check(repo, sha, blockers.length ? 'failure' : 'success', body, checkId);
+      await this.publishCheck(repo, sha, blockers.length ? 'failure' : 'success', body, previous);
     } catch (error) {
-      await this.check(repo, sha, 'failure', `Dependency validation failed: ${error.message}`, checkId);
+      await this.publishCheck(
+        repo, sha, 'failure', `Dependency validation failed: ${error.message}`, previous,
+      );
       if (!this.dryRun && this.isManaged(repo, pr) && pr.state === 'open') {
         await this.api.draft(pr, true);
       }
