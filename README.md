@@ -13,7 +13,7 @@ gitlinks, and default branch on every run.
 
 | Repository | Default branch | Direct Git-submodule dependencies |
 | --- | --- | --- |
-| [hasm_color_pattern](https://github.com/HibiyaHaraki/hasm_color_pattern) | `master` | None |
+| [hasm_color_pattern](https://github.com/HibiyaHaraki/hasm_color_pattern) | `master` | `hasm_logger` |
 | [hasm_logger](https://github.com/HibiyaHaraki/hasm_logger) | `master` | None |
 | [hasm_visualizer](https://github.com/HibiyaHaraki/hasm_visualizer) | `main` | None; runtime sibling imports require `hasm_color_pattern` and `hasm_logger` |
 | [hasm_logo](https://github.com/HibiyaHaraki/hasm_logo) | `master` | `hasm_color_pattern` |

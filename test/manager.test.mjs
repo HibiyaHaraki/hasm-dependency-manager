@@ -197,6 +197,7 @@ const run = async (api, options = {}) => {
 test('real HASM configuration includes all duplicate direct references and has no cycle', async () => {
   const actual = JSON.parse(await readFile(new URL('../repositories.json', import.meta.url), 'utf8'));
   assert.equal(orderRepositories(actual).length, 8);
+  assert.equal(actual.repositories.hasm_color_pattern.submodules.hasm_logger, 'hasm_logger');
   assert.equal(actual.repositories.hasm.submodules['src/hasm_logger'], 'hasm_logger');
   assert.equal(actual.repositories.hasm.submodules['src-tauri/src/hasm_logger'], 'hasm_logger');
   assert.equal(actual.repositories['hasm-top'].submodules['src/hasm_visualizer'], 'hasm_visualizer');

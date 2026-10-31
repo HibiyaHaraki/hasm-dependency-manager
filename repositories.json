@@ -1,7 +1,7 @@
 {
   "owner": "HibiyaHaraki",
   "repositories": {
-    "hasm_color_pattern": { "branch": "master", "submodules": {} },
+    "hasm_color_pattern": { "branch": "master", "submodules": { "hasm_logger": "hasm_logger" } },
     "hasm_logger": { "branch": "master", "submodules": {} },
     "hasm_visualizer": { "branch": "main", "submodules": {} },
     "hasm_logo": {
