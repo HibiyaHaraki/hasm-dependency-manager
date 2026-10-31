@@ -107,6 +107,14 @@ Do not move automatic updates to a normal branch to evade the dependency gate.
 - Closing an automatic PR without merging suppresses that exact base/target
   update. New base or target commits can produce a new proposal. Reopen the
   rejected PR to resume the existing update.
+- A nested gitlink may still reference a historical commit from before a
+  configured submodule was added. If its existing submodules match the allowlist,
+  its gitlinks match its `.gitmodules`, and it is an ancestor of the validated
+  merged target, this is reported as a **warning**, not a workflow error.
+  The consumer remains blocked until prerequisite merges and gitlink updates
+  replace the historical reference. Missing submodules in current default-branch
+  heads or automatic PR heads, unknown paths, remapped repositories, and
+  inconsistent gitlinks remain errors.
 - An orphan branch left by an interrupted PR creation is not overwritten.
   Inspect it and either open its PR manually or remove that specific remote
   branch before retrying.

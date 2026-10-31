@@ -22,6 +22,7 @@ const config = {
 
 class FakeGitHub {
   constructor() {
+    this.config = config;
     this.sequence = 0;
     this.trees = new Map();
     this.commits = new Map();
@@ -47,7 +48,7 @@ class FakeGitHub {
 
   commit(repo, links, parent) {
     const tree = [{ path: 'README.md', mode: '100644', type: 'blob', sha: 'fixed-readme' }];
-    const modules = config.repositories[repo].submodules;
+    const modules = this.config.repositories[repo].submodules;
     if (Object.keys(modules).length) {
       const blob = this.id();
       const content = Object.entries(modules).map(([path, name]) => (
@@ -97,7 +98,7 @@ class FakeGitHub {
     assert.ok(match, `Unexpected endpoint ${path}`);
     const [, repo, suffix] = match;
     if (method === 'GET' && !suffix) {
-      return { default_branch: config.repositories[repo].branch };
+      return { default_branch: this.config.repositories[repo].branch };
     }
     if (method === 'GET' && suffix.startsWith('/git/ref/heads/')) {
       return { object: { sha: this.refs.get(`${repo}:${decodeURIComponent(suffix.slice(15))}`) } };
@@ -292,6 +293,97 @@ test('idempotent rerun makes no extra commits or PRs', async () => {
   assert.equal(api.createdCommits.length, count);
   assert.equal(api.checks.filter((check) => check.repo === 'top').length, topCheckCount);
   assert.equal(api.prs.get('top').length, 1);
+});
+
+test('historical missing submodules warn while prerequisite PRs wait, then clear after merge', async () => {
+  const api = new FakeGitHub();
+  const updated = structuredClone(config);
+  updated.repositories.logger = { branch: 'master', submodules: {} };
+  updated.repositories.leaf.submodules = { logger: 'logger' };
+  api.config = updated;
+  const logger = api.commit('logger', {});
+  api.prs.set('logger', []);
+  api.refs.set('logger:master', logger);
+  const latestLeaf = api.commit('leaf', { logger }, api.latestLeaf);
+  api.refs.set('leaf:master', latestLeaf);
+  const logs = [];
+  const execute = async (dryRun = false) => {
+    const manager = new Manager(api, updated, { dryRun, log: (line) => logs.push(line) });
+    await manager.run();
+    return manager;
+  };
+  await execute();
+  const middle = api.prs.get('middle')[0];
+  const top = api.prs.get('top')[0];
+  assert.equal(middle.draft, false);
+  assert.equal(top.draft, true);
+  assert.equal(api.latestCheck('top', top.head.sha).conclusion, 'failure');
+  assert.match(top.body, /Merge \[middle #1\]/);
+  assert.ok(logs.some((line) => /WARNING leaf@.*historical commit.*logger/.test(line)));
+  assert.ok(!logs.some((line) => line.startsWith('ERROR')));
+  const checks = api.checks.filter((check) => check.repo === 'top').length;
+  await execute();
+  assert.equal(api.checks.filter((check) => check.repo === 'top').length, checks);
+  api.calls = [];
+  await execute(true);
+  assert.ok(api.calls.every((call) => call.method === 'GET'));
+  api.merge('middle');
+  logs.length = 0;
+  await execute();
+  assert.equal(top.draft, false);
+  assert.equal(api.latestCheck('top', top.head.sha).conclusion, 'success');
+  assert.ok(!logs.some((line) => line.startsWith('WARNING')));
+});
+
+test('historical allowance does not bypass strict snapshots or malformed gitlinks', async () => {
+  const api = new FakeGitHub();
+  const updated = structuredClone(config);
+  updated.repositories.logger = { branch: 'master', submodules: {} };
+  updated.repositories.leaf.submodules = { logger: 'logger' };
+  const manager = new Manager(api, updated, { log() {} });
+  manager.targets.set('leaf', { sha: api.latestLeaf });
+  await manager.snapshot('leaf', api.oldLeaf, { allowMissing: true });
+  await assert.rejects(manager.snapshot('leaf', api.oldLeaf), /differ from repositories.json/);
+  await assert.rejects(
+    manager.snapshot('leaf', api.latestLeaf, { allowMissing: true }), /without a validated merged target/,
+  );
+  const tree = api.trees.get(api.commits.get(api.oldLeaf).tree.sha);
+  tree.push({ path: 'logger', mode: '160000', type: 'commit', sha: api.latestLeaf });
+  const fresh = new Manager(api, updated, { log() {} });
+  fresh.targets.set('leaf', { sha: api.latestLeaf });
+  await assert.rejects(
+    fresh.snapshot('leaf', api.oldLeaf, { allowMissing: true }), /differ from repositories.json/,
+  );
+});
+
+test('unmerged missing-submodule commits are not treated as expected waiting', async () => {
+  const api = new FakeGitHub();
+  const updated = structuredClone(config);
+  updated.repositories.logger = { branch: 'master', submodules: {} };
+  updated.repositories.leaf.submodules = { logger: 'logger' };
+  const unmerged = api.commit('leaf', {}, api.oldLeaf);
+  const manager = new Manager(api, updated, { log() {} });
+  manager.targets.set('leaf', { sha: api.latestLeaf });
+  await assert.rejects(
+    manager.snapshot('leaf', unmerged, { allowMissing: true }), /outside the merged target history/,
+  );
+});
+
+test('missing current submodules, unknown historical paths and remapped repositories remain errors', async () => {
+  const api = new FakeGitHub();
+  const middle = api.refs.get('middle:main');
+  api.trees.set(api.commits.get(middle).tree.sha, []);
+  await assert.rejects(run(api), /differ from repositories.json/);
+  const tree = [{ path: 'leaf', mode: '160000', type: 'commit', sha: api.oldLeaf }];
+  assert.throws(
+    () => validateTree('middle', tree, { leaf: 'top' }, config, { allowMissing: true }),
+    /differ from repositories.json/,
+  );
+  assert.throws(
+    () => validateTree('middle', [{ ...tree[0], path: 'unknown' }], { unknown: 'leaf' },
+      config, { allowMissing: true }),
+    /differ from repositories.json/,
+  );
 });
 
 test('dry-run never mutates GitHub even with existing automatic PRs', async () => {

@@ -61,14 +61,19 @@ export function parseGitmodules(text, owner) {
   return result;
 }
 
-export function validateTree(name, tree, modules, config) {
+export function validateTree(name, tree, modules, config, { allowMissing = false } = {}) {
   const expected = config.repositories[name].submodules;
+  const missing = Object.keys(expected).filter((path) => !Object.hasOwn(modules, path));
+  const required = allowMissing
+    ? Object.fromEntries(Object.entries(expected).filter(([path]) => Object.hasOwn(modules, path)))
+    : expected;
   const actual = Object.fromEntries(tree.filter((entry) => entry.mode === '160000')
     .map((entry) => [entry.path, modules[entry.path]]));
   const entries = (object) => JSON.stringify(Object.entries(object).sort());
-  if (entries(modules) !== entries(expected) || entries(actual) !== entries(expected)) {
+  if (entries(modules) !== entries(required) || entries(actual) !== entries(modules)) {
     throw new Error(`${name}: .gitmodules/gitlinks differ from repositories.json; update the configuration manually.`);
   }
+  return missing;
 }
 
 export function assertPointerOnly(baseTree, headTree, modules) {
@@ -103,8 +108,8 @@ export class Manager {
     return `/repos/${this.config.owner}/${repo}${suffix}`;
   }
 
-  async snapshot(repo, sha) {
-    const key = `${repo}:${sha}`;
+  async snapshot(repo, sha, { allowMissing = false } = {}) {
+    const key = `${repo}:${sha}:${allowMissing}`;
     if (this.snapshots.has(key)) return this.snapshots.get(key);
     const commit = await this.api.request('GET', this.path(repo, `/git/commits/${sha}`));
     const tree = await this.api.request('GET', this.path(repo, `/git/trees/${commit.tree.sha}?recursive=1`));
@@ -116,9 +121,21 @@ export class Manager {
       if (blob.encoding !== 'base64') throw new Error(`${repo}: Unexpected .gitmodules encoding.`);
       modules = parseGitmodules(Buffer.from(blob.content, 'base64').toString('utf8'), this.config.owner);
     }
-    validateTree(repo, tree.tree, modules, this.config);
+    const missing = validateTree(repo, tree.tree, modules, this.config, { allowMissing });
+    if (missing.length) {
+      const target = this.targets.get(repo);
+      if (!target || target.sha === sha) {
+        throw new Error(`${repo}@${sha}: missing configured submodules without a validated merged target.`);
+      }
+      const compare = await this.api.request('GET',
+        this.path(repo, `/compare/${target.sha}...${sha}`));
+      if (compare.merge_base_commit.sha !== sha) {
+        throw new Error(`${repo}@${sha}: missing configured submodules on a commit outside the merged target history.`);
+      }
+      this.log(`WARNING ${repo}@${sha}: historical commit predates configured submodules (${missing.join(', ')}); waiting for dependency reference updates to ${target.sha}.`);
+    }
     const snapshot = {
-      sha, treeSha: commit.tree.sha, tree: tree.tree,
+      sha, treeSha: commit.tree.sha, tree: tree.tree, modules,
       links: Object.fromEntries(tree.tree.filter((entry) => entry.mode === '160000')
         .map((entry) => [entry.path, entry.sha])),
     };
@@ -162,7 +179,7 @@ export class Manager {
     if (ancestry.has(key)) throw new Error(`Recursive gitlink cycle at ${key}.`);
     const nextAncestry = new Set([...ancestry, key]);
     const result = [];
-    for (const [path, dependency] of Object.entries(this.config.repositories[repo].submodules)) {
+    for (const [path, dependency] of Object.entries(snapshot.modules)) {
       const actual = snapshot.links[path];
       const expected = this.targets.get(dependency).sha;
       const location = prefix ? `${prefix}/${path}` : path;
@@ -170,7 +187,8 @@ export class Manager {
         result.push({ repository: repo, dependency, path, location, actual, expected });
       }
       result.push(...await this.blockers(
-        dependency, await this.snapshot(dependency, actual), location, nextAncestry,
+        dependency, await this.snapshot(dependency, actual, { allowMissing: actual !== expected }),
+        location, nextAncestry,
       ));
     }
     return result;
