@@ -22,6 +22,55 @@ gitlinks, and default branch on every run.
 | [hasm](https://github.com/HibiyaHaraki/hasm) | `master` | `hasm_logger` (two paths), `hasm_color_pattern`, `hasm_markdown`, `hasm_logo`, `hasm_visualizer` |
 | [hasm-top](https://github.com/HibiyaHaraki/hasm-top) | `master` | `hasm`, `hasm_markdown`, `hasm_logo`, `hasm_logger`, `hasm_color_pattern`, `hasm_visualizer` |
 
+## PR order when a repository changes
+
+The diagram shows the configured submodule relationships. Follow arrows from a
+changed repository to find consumers whose gitlinks may need update PRs. The
+manager processes repositories in dependency-first order; branches from one
+repository can be processed during the same run. A consumer gets a PR only when
+one of its direct gitlinks differs from the latest merged dependency commit.
+For multi-hop paths, merge the prerequisite PR before the next gitlink can point
+to that merged update. An open prerequisite PR does not count as a merged target,
+and dependent PR checks remain failing until references are aligned.
+
+```mermaid
+flowchart LR
+    logger["hasm_logger"] --> color_pattern["hasm_color_pattern"]
+    color_pattern --> logo["hasm_logo"]
+    logger --> example_generator["hasm_example_generator"]
+    logger --> markdown["hasm_markdown"]
+    color_pattern --> markdown
+    logo --> markdown
+    logger --> hasm["hasm"]
+    color_pattern --> hasm
+    markdown --> hasm
+    logo --> hasm
+    visualizer["hasm_visualizer"] --> hasm
+    hasm --> hasm_top["hasm-top"]
+    markdown --> hasm_top
+    logo --> hasm_top
+    logger --> hasm_top
+    color_pattern --> hasm_top
+    visualizer --> hasm_top
+```
+
+For each possible changed repository, the table lists all downstream consumers
+in the manager's processing order. These are potential PRs: a consumer with no
+direct gitlink difference waits until an upstream PR is merged and a later
+workflow run observes the new merged commit. `hasm_visualizer`'s runtime sibling
+imports are not submodule edges and do not create PRs in `hasm_visualizer`.
+
+| Changed repository | Downstream PR consumers (processing order) |
+| --- | --- |
+| `hasm_logger` | `hasm_color_pattern`, `hasm_logo`, `hasm_example_generator`, `hasm_markdown`, `hasm`, `hasm-top` |
+| `hasm_color_pattern` | `hasm_logo`, `hasm_markdown`, `hasm`, `hasm-top` |
+| `hasm_visualizer` | `hasm`, `hasm-top` |
+| `hasm_logo` | `hasm_markdown`, `hasm`, `hasm-top` |
+| `hasm_example_generator` | None |
+| `hasm_markdown` | `hasm`, `hasm-top` |
+| `hasm` | `hasm-top` |
+| `hasm-top` | None |
+
 ## How it works
 
 1. Capture the merged heads of the configured default branches. Unmerged
