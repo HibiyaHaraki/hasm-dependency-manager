@@ -1,0 +1,47 @@
+{
+  "owner": "HibiyaHaraki",
+  "repositories": {
+    "hasm_color_pattern": { "branch": "master", "submodules": {} },
+    "hasm_logger": { "branch": "master", "submodules": {} },
+    "hasm_visualizer": { "branch": "main", "submodules": {} },
+    "hasm_logo": {
+      "branch": "master",
+      "submodules": { "hasm_color_pattern": "hasm_color_pattern" }
+    },
+    "hasm_example_generator": {
+      "branch": "master",
+      "submodules": { "scripts/hasm_logger": "hasm_logger" }
+    },
+    "hasm_markdown": {
+      "branch": "main",
+      "submodules": {
+        "src/hasm_logger": "hasm_logger",
+        "src/hasm_color_pattern": "hasm_color_pattern",
+        "src-tauri/src/hasm_logger": "hasm_logger",
+        "hasm_logo": "hasm_logo"
+      }
+    },
+    "hasm": {
+      "branch": "master",
+      "submodules": {
+        "src/hasm_logger": "hasm_logger",
+        "src/hasm_color_pattern": "hasm_color_pattern",
+        "src-tauri/src/hasm_logger": "hasm_logger",
+        "src-tauri/hasm_markdown": "hasm_markdown",
+        "hasm_logo": "hasm_logo",
+        "src/hasm_visualizer": "hasm_visualizer"
+      }
+    },
+    "hasm-top": {
+      "branch": "master",
+      "submodules": {
+        "submodules/hasm": "hasm",
+        "submodules/hasm_markdown": "hasm_markdown",
+        "submodules/hasm_logo": "hasm_logo",
+        "src/hasm_logger": "hasm_logger",
+        "src/hasm_color_pattern": "hasm_color_pattern",
+        "src/hasm_visualizer": "hasm_visualizer"
+      }
+    }
+  }
+}

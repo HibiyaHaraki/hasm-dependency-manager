@@ -1,0 +1,59 @@
+name: HASM dependency updates
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Inspect dependencies without changing branches, PRs, or checks
+        type: boolean
+        default: true
+  repository_dispatch:
+    types: [hasm-dependency-refresh]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hasm-dependency-manager
+  cancel-in-progress: false
+
+jobs:
+  synchronize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Create GitHub App installation token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.HASM_DEPENDENCY_APP_ID }}
+          private-key: ${{ secrets.HASM_DEPENDENCY_APP_PRIVATE_KEY }}
+          owner: HibiyaHaraki
+          repositories: |
+            hasm
+            hasm-top
+            hasm_color_pattern
+            hasm_example_generator
+            hasm_logger
+            hasm_logo
+            hasm_markdown
+            hasm_visualizer
+      - name: Synchronize dependency PRs
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        shell: bash
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            node scripts/run.mjs --dry-run
+          else
+            node scripts/run.mjs
+          fi
